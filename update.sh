@@ -1,4 +1,4 @@
 git checkout master
-git fetch upstream
-git push origin
+git merge upstream/master
+git push
 
