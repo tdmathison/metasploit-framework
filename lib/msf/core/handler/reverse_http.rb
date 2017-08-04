@@ -45,7 +45,7 @@ module ReverseHttp
 
     register_options(
       [
-        OptString.new('LHOST', [true, 'The local listener hostname']),
+        OptAddressLocal.new('LHOST', [true, 'The local listener hostname']),
         OptPort.new('LPORT', [true, 'The local listener port', 8080]),
         OptString.new('LURI', [false, 'The HTTP Path', ''])
       ], Msf::Handler::ReverseHttp)
@@ -59,6 +59,7 @@ module ReverseHttp
         OptBool.new('OverrideRequestHost', [false, 'Forces a specific host and port instead of using what the client requests, defaults to LHOST:LPORT', false]),
         OptString.new('OverrideLHOST', [false, 'When OverrideRequestHost is set, use this value as the host name for secondary requests']),
         OptPort.new('OverrideLPORT', [false, 'When OverrideRequestHost is set, use this value as the port number for secondary requests']),
+        OptString.new('OverrideScheme', [false, 'When OverrideRequestHost is set, use this value as the scheme for secondary requests, e.g http or https']),
         OptString.new('HttpUnknownRequestResponse', [false, 'The returned HTML response body when the handler receives a request that is not from a payload', '<html><body><h1>It works!</h1></body></html>']),
         OptBool.new('IgnoreUnknownPayloads', [false, 'Whether to drop connections from payloads using unknown UUIDs', false])
       ], Msf::Handler::ReverseHttp)
@@ -91,6 +92,7 @@ module ReverseHttp
   # @return [String] A URI of the form +scheme://host:port/+
   def payload_uri(req=nil)
     callback_host = nil
+    callback_scheme = nil
 
     # Extract whatever the client sent us in the Host header
     if req && req.headers && req.headers['Host']
@@ -103,6 +105,7 @@ module ReverseHttp
     if datastore['OverrideRequestHost'] || callback_host.nil?
       callback_host = datastore['OverrideLHOST']
       callback_port = datastore['OverrideLPORT']
+      callback_scheme = datastore['OverrideScheme']
     end
 
     if callback_host.nil? || callback_host.empty?
@@ -113,11 +116,23 @@ module ReverseHttp
       callback_port = datastore['LPORT']
     end
 
+    if callback_scheme.nil? || callback_scheme.empty?
+      callback_scheme = scheme
+    end
+
     if Rex::Socket.is_ipv6? callback_host
       callback_host = "[#{callback_host}]"
     end
 
-    "#{scheme}://#{callback_host}:#{callback_port}"
+    if callback_host.nil?
+      raise ArgumentError, "No host specified for payload_uri"
+    end
+
+    if callback_port
+      "#{callback_scheme}://#{callback_host}:#{callback_port}"
+    else
+      "#{callback_scheme}://#{callback_host}"
+    end
   end
 
   # Use the #refname to determine whether this handler uses SSL or not
@@ -317,77 +332,31 @@ protected
         pkt.add_tlv(Rex::Post::Meterpreter::TLV_TYPE_TRANS_URL, conn_id + "/")
         resp.body = pkt.to_r
 
-      when :init_python
-        print_status("Staging Python payload...")
+      when :init_python, :init_native, :init_java
+        # TODO: at some point we may normalise these three cases into just :init
         url = payload_uri(req) + conn_id + '/'
 
-        blob = ""
-        blob << self.generate_stage(
-          http_url: url,
-          http_user_agent: datastore['MeterpreterUserAgent'],
-          http_proxy_host: datastore['PayloadProxyHost'] || datastore['PROXYHOST'],
-          http_proxy_port: datastore['PayloadProxyPort'] || datastore['PROXYPORT'],
-          uuid: uuid,
-          uri:  conn_id
-        )
-
-        resp.body = blob
-
-        # Short-circuit the payload's handle_connection processing for create_session
-        create_session(cli, {
-          :passive_dispatcher => self.service,
-          :conn_id            => conn_id,
-          :url                => url,
-          :expiration         => datastore['SessionExpirationTimeout'].to_i,
-          :comm_timeout       => datastore['SessionCommunicationTimeout'].to_i,
-          :retry_total        => datastore['SessionRetryTotal'].to_i,
-          :retry_wait         => datastore['SessionRetryWait'].to_i,
-          :ssl                => ssl?,
-          :payload_uuid       => uuid
-        })
-
-      when :init_java
-        print_status("Staging Java payload...")
-        url = payload_uri(req) + conn_id + "/\x00"
-
-        blob = self.generate_stage(
-          uuid: uuid,
-          uri:  conn_id
-        )
-
-        resp.body = blob
-
-        # Short-circuit the payload's handle_connection processing for create_session
-        create_session(cli, {
-          :passive_dispatcher => self.service,
-          :conn_id            => conn_id,
-          :url                => url,
-          :expiration         => datastore['SessionExpirationTimeout'].to_i,
-          :comm_timeout       => datastore['SessionCommunicationTimeout'].to_i,
-          :retry_total        => datastore['SessionRetryTotal'].to_i,
-          :retry_wait         => datastore['SessionRetryWait'].to_i,
-          :ssl                => ssl?,
-          :payload_uuid       => uuid
-        })
-
-      when :init_native
-        print_status("Staging Native payload...")
-        url = payload_uri(req) + conn_id + "/\x00"
+        # Damn you, python! Ruining my perfect world!
+        url += "\x00" unless uuid.arch == ARCH_PYTHON
         uri = URI(payload_uri(req) + conn_id)
 
-        resp['Content-Type'] = 'application/octet-stream'
+        # TODO: does this have to happen just for windows, or can we set it for all?
+        resp['Content-Type'] = 'application/octet-stream' if uuid.platform == 'windows'
 
         begin
-          # generate the stage, but pass in the existing UUID and connection id so that
-          # we don't get new ones generated.
-          blob = self.stage_payload(
-            uuid: uuid,
-            uri:  conn_id,
+          blob = self.generate_stage(
+            url:   url,
+            uuid:  uuid,
             lhost: uri.host,
-            lport: uri.port
+            lport: uri.port,
+            uri:   conn_id
           )
 
-          resp.body = encode_stage(blob)
+          blob = encode_stage(blob) if self.respond_to?(:encode_stage)
+
+          print_status("Staging #{uuid.arch} payload (#{blob.length} bytes) ...")
+
+          resp.body = blob
 
           # Short-circuit the payload's handle_connection processing for create_session
           create_session(cli, {
@@ -414,13 +383,14 @@ protected
         url = payload_uri(req) + conn_id
         url << '/' unless url[-1] == '/'
 
-        p url
+        # Damn you, python! Ruining my perfect world!
+        url += "\x00" unless uuid.arch == ARCH_PYTHON
 
         # Short-circuit the payload's handle_connection processing for create_session
         create_session(cli, {
           :passive_dispatcher => self.service,
           :conn_id            => conn_id,
-          :url                => url + "\x00",
+          :url                => url,
           :expiration         => datastore['SessionExpirationTimeout'].to_i,
           :comm_timeout       => datastore['SessionCommunicationTimeout'].to_i,
           :retry_total        => datastore['SessionRetryTotal'].to_i,
@@ -449,4 +419,3 @@ end
 
 end
 end
-

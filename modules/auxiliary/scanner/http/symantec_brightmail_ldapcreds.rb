@@ -1,15 +1,13 @@
 ##
-# This module requires Metasploit: http://metasploit.com/download
+# This module requires Metasploit: https://metasploit.com/download
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/core'
 require 'digest'
 require "openssl"
 
 
 class MetasploitModule < Msf::Auxiliary
-
   include Msf::Auxiliary::Scanner
   include Msf::Exploit::Remote::HttpClient
 
@@ -48,7 +46,7 @@ class MetasploitModule < Msf::Auxiliary
         OptString.new('USERNAME', [true, 'The username to login as']),
         OptString.new('PASSWORD', [true, 'The password to login with']),
         OptString.new('TARGETURI', [true, 'The base path to Symantec Messaging Gateway', '/'])
-      ], self.class)
+      ])
 
     deregister_options('RHOST')
   end
@@ -194,7 +192,7 @@ class MetasploitModule < Msf::Auxiliary
     (dk, iv) = get_derived_key(pbe_key, salt, 1000)
     alg = 'des-cbc'
 
-    decode_cipher = OpenSSL::Cipher::Cipher.new(alg)
+    decode_cipher = OpenSSL::Cipher.new(alg)
     decode_cipher.decrypt
     decode_cipher.padding = 0
     decode_cipher.key = dk

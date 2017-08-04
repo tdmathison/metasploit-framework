@@ -17,6 +17,13 @@ class Msf::Post < Msf::Module
   require 'msf/core/post/unix'
   require 'msf/core/post/windows'
   require 'msf/core/post/android'
+  require 'msf/core/post/hardware'
+
+  class Complete < RuntimeError
+  end
+
+  class Failed < RuntimeError
+  end
 
   include Msf::PostMixin
 
@@ -57,7 +64,7 @@ class Msf::Post < Msf::Module
   # is currently running against.
   #
   # @return [NilClass] if there is no database record for the session
-  # @return [Fixnum] if there is a database record to get the id for
+  # @return [Integer] if there is a database record to get the id for
   def session_db_id
     if session.db_record
       session.db_record.id
@@ -65,4 +72,10 @@ class Msf::Post < Msf::Module
       nil
     end
   end
+
+  # Override Msf::Module#fail_with for Msf::Simple::Post::job_run_proc
+  def fail_with(reason, msg = nil)
+    raise Msf::Post::Failed, "#{reason.to_s}: #{msg}"
+  end
+
 end

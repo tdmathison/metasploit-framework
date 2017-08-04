@@ -1,16 +1,11 @@
 ##
-# This module requires Metasploit: http://metasploit.com/download
+# This module requires Metasploit: https://metasploit.com/download
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-
-require 'msf/core'
-
-
 class MetasploitModule < Msf::Auxiliary
-
   include Msf::Exploit::Remote::DCERPC
-  include ::Rex::Platforms::Windows
+  include Msf::Post::Windows::Registry
 
   def initialize(info = {})
     super(update_info(info,
@@ -48,7 +43,7 @@ class MetasploitModule < Msf::Auxiliary
               "Compromised by Metasploit!\r\n"
             ]
           ),
-        ], self.class)
+        ])
   end
 
   def auxiliary_commands
@@ -272,5 +267,4 @@ class MetasploitModule < Msf::Auxiliary
       NDR.long(hive)
     return stub
   end
-
 end

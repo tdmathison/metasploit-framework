@@ -12,16 +12,6 @@ require 'time'
 
 CHECK_OLD_RUBIES = !!ENV['MSF_CHECK_OLD_RUBIES']
 SUPPRESS_INFO_MESSAGES = !!ENV['MSF_SUPPRESS_INFO_MESSAGES']
-TITLE_WHITELIST = %w{
-  a an and as at avserve callmenum configdir connect debug docbase dtspcd
-  execve file for from getinfo goaway gsad hetro historysearch htpasswd ibstat
-  id in inetd iseemedia jhot libxslt lmgrd lnk load main map migrate mimencode
-  multisort name net netcat nodeid ntpd nttrans of on onreadystatechange or
-  ovutil path pbot pfilez pgpass pingstr pls popsubfolders prescan readvar
-  relfile rev rexec rlogin rsh rsyslog sa sadmind say sblistpack spamd
-  sreplace tagprinter the tnftp to twikidraw udev uplay user username via
-  welcome with ypupdated zsudo
-}
 
 if CHECK_OLD_RUBIES
   require 'rvm'
@@ -178,8 +168,6 @@ class Msftidy
         case identifier
         when 'CVE'
           warn("Invalid CVE format: '#{value}'") if value !~ /^\d{4}\-\d{4,}$/
-        when 'OSVDB'
-          warn("Invalid OSVDB format: '#{value}'") if value !~ /^\d+$/
         when 'BID'
           warn("Invalid BID format: '#{value}'") if value !~ /^\d+$/
         when 'MSB'
@@ -196,10 +184,8 @@ class Msftidy
           warn("Invalid WPVDB reference") if value !~ /^\d+$/
         when 'PACKETSTORM'
           warn("Invalid PACKETSTORM reference") if value !~ /^\d+$/
-        when 'URL'
-          if value =~ /^http:\/\/www\.osvdb\.org/
-            warn("Please use 'OSVDB' for '#{value}'")
-          elsif value =~ /^http:\/\/cvedetails\.com\/cve/
+        when 'URL' || 'AKA'
+          if value =~ /^http:\/\/cvedetails\.com\/cve/
             warn("Please use 'CVE' for '#{value}'")
           elsif value =~ /^http:\/\/www\.securityfocus\.com\/bid\//
             warn("Please use 'BID' for '#{value}'")
@@ -219,6 +205,18 @@ class Msftidy
     end
   end
 
+  def check_self_class
+    in_register = false
+    @lines.each do |line|
+      (in_register = true) if line =~ /^\s*register_(?:advanced_)?options/
+      (in_register = false) if line =~ /^\s*end/
+      if in_register && line =~ /\],\s*self\.class\s*\)/
+        warn('Explicitly using self.class in register_* is not necessary')
+        break
+      end
+    end
+  end
+
   # See if 'require "rubygems"' or equivalent is used, and
   # warn if so.  Since Ruby 1.9 this has not been necessary and
   # the framework only suports 1.9+
@@ -226,6 +224,15 @@ class Msftidy
     @lines.each do |line|
       if line_has_require?(line, 'rubygems')
         warn("Explicitly requiring/loading rubygems is not necessary")
+        break
+      end
+    end
+  end
+
+  def check_msf_core
+    @lines.each do |line|
+      if line_has_require?(line, 'msf/core')
+        warn('Explicitly requiring/loading msf/core is not necessary')
         break
       end
     end
@@ -451,19 +458,6 @@ class Msftidy
     end
   end
 
-  def check_title_casing
-    if @source =~ /["']Name["'][[:space:]]*=>[[:space:]]*['"](.+)['"],*$/
-      words = $1.split
-      words.each do |word|
-        if TITLE_WHITELIST.include?(word)
-          next
-        elsif word =~ /^[a-z]+$/
-          warn("Suspect capitalization in module title: '#{word}'")
-        end
-      end
-    end
-  end
-
   def check_bad_terms
     # "Stack overflow" vs "Stack buffer overflow" - See explanation:
     # http://blogs.technet.com/b/srd/archive/2009/01/28/stack-overflow-stack-exhaustion-not-the-same-as-stack-buffer-overflow.aspx
@@ -582,7 +576,7 @@ class Msftidy
       next if ln =~ /^[[:space:]]*#/
 
       if ln =~ /\$std(?:out|err)/i or ln =~ /[[:space:]]puts/
-        next if ln =~ /^[\s]*["][^"]+\$std(?:out|err)/
+        next if ln =~ /["'][^"']*\$std(?:out|err)[^"']*["']/
         no_stdio = false
         error("Writes to stdout", idx)
       end
@@ -622,7 +616,7 @@ class Msftidy
   end
 
   def check_vars_get
-    test = @source.scan(/send_request_cgi\s*\(\s*\{?\s*['"]uri['"]\s*=>\s*[^=})]*?\?[^,})]+/im)
+    test = @source.scan(/send_request_cgi\s*\(?\s*\{?\s*['"]uri['"]\s*=>\s*[^=})]*?\?[^,})]+/im)
     unless test.empty?
       test.each { |item|
         info("Please use vars_get in send_request_cgi: #{item}")
@@ -649,7 +643,7 @@ class Msftidy
   end
 
   # At one point in time, somebody committed a module with a bad metasploit.com URL
-  # in the header -- http//metasploit.com/download rather than http://metasploit.com/download.
+  # in the header -- http//metasploit.com/download rather than https://metasploit.com/download.
   # This module then got copied and committed 20+ times and is used in numerous other places.
   # This ensures that this stops.
   def check_invalid_url_scheme
@@ -688,6 +682,15 @@ class Msftidy
     end
   end
 
+  # Check for modules using the deprecated architectures
+  #
+  # @see https://github.com/rapid7/metasploit-framework/pull/7507
+  def check_arch
+    if @source =~ /ARCH_X86_64/
+      error('Please don\'t use the ARCH_X86_64 architecture, use ARCH_X64 instead')
+    end
+  end
+
   #
   # Run all the msftidy checks.
   #
@@ -696,7 +699,9 @@ class Msftidy
     check_shebang
     check_nokogiri
     check_rubygems
+    check_msf_core
     check_ref_identifiers
+    check_self_class
     check_old_keywords
     check_verbose_option
     check_badchars
@@ -704,7 +709,6 @@ class Msftidy
     check_old_rubies
     check_ranking
     check_disclosure_date
-    check_title_casing
     check_bad_terms
     check_bad_super_class
     check_bad_class_name
@@ -721,6 +725,7 @@ class Msftidy
     check_print_debug
     check_register_datastore_debug
     check_use_datastore_debug
+    check_arch
   end
 
   private

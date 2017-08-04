@@ -1,10 +1,8 @@
 ##
-# This module requires Metasploit: http://metasploit.com/download
+# This module requires Metasploit: https://metasploit.com/download
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-require 'msf/core'
-require 'rex'
 require 'base64'
 
 class MetasploitModule < Msf::Post
@@ -23,13 +21,13 @@ class MetasploitModule < Msf::Post
         'License'       => MSF_LICENSE,
         'Author'        => ['Manuel Nader #AgoraSecurity'],
         'Platform'      => ['win'],
-        'Arch'          => ['x64','x86'],
+        'Arch'          => [ARCH_X86, ARCH_X64],
         'SessionTypes'  => ['meterpreter']
     ))
 
     register_options(
       [OptString.new('RPATH', [false, 'Path of the MDaemon installation', false]) # If software is installed on a rare directory
-    ], self.class)
+    ])
   end
 
   def run
@@ -198,7 +196,7 @@ class MetasploitModule < Msf::Post
       login_data.merge!(service_data)
       create_credential_login(login_data)
 
-      print_status ("    Extracted: #{credential_data[:username]}:#{credential_data[:private_data]}")
+      print_status("    Extracted: #{credential_data[:username]}:#{credential_data[:private_data]}")
     end
 
     # report the goods!
@@ -242,7 +240,7 @@ class MetasploitModule < Msf::Post
       login_data.merge!(service_data)
       create_credential_login(login_data)
 
-      print_status ("    Extracted: #{credential_data[:username]}:#{credential_data[:private_data]}")
+      print_status("    Extracted: #{credential_data[:username]}:#{credential_data[:private_data]}")
     end
 
     # report the goods!
@@ -286,7 +284,7 @@ class MetasploitModule < Msf::Post
       login_data.merge!(service_data)
       create_credential_login(login_data)
 
-      print_status ("    Extracted: #{credential_data[:username]}:#{credential_data[:private_data]}")
+      print_status("    Extracted: #{credential_data[:username]}:#{credential_data[:private_data]}")
     end
 
     # report the goods!
@@ -296,7 +294,7 @@ class MetasploitModule < Msf::Post
   end
 
   def get_mdaemon_creds(userlist)
-    credentials = Rex::Ui::Text::Table.new(
+    credentials = Rex::Text::Table.new(
       'Header'    => 'MDaemon Email Server Credentials',
       'Indent'    => 1,
       'Columns'   =>

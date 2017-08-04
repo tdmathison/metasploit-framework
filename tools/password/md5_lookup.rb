@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 ##
-# This module requires Metasploit: http://metasploit.com/download
+# This module requires Metasploit: https://metasploit.com/download
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
@@ -148,7 +148,7 @@ module Md5LookupUtility
     attr_accessor :rhost
 
     # @!attribute rport
-    #  @return [Fixnum] The port number to md5cracker.org
+    #  @return [Integer] The port number to md5cracker.org
     attr_accessor :rport
 
     # @!attribute target_uri

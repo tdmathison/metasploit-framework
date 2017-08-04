@@ -51,6 +51,17 @@ module MeterpreterOptions
     end
 
     if valid
+      # always make sure that the new session has a new guid if it's not already known
+      guid = session.core.get_session_guid
+      if guid == '00000000-0000-0000-0000-000000000000'
+        guid = SecureRandom.uuid
+        session.core.set_session_guid(guid)
+        session.guid = guid
+        # TODO: New statgeless session, do some account in the DB so we can track it later.
+      else
+        session.guid = guid
+        # TODO: This session was either staged or previously known, and so we shold do some accounting here!
+      end
 
       if datastore['AutoLoadStdapi']
 
@@ -60,19 +71,18 @@ module MeterpreterOptions
           session.load_session_info
         end
 
-        if session.platform =~ /win32|win64/i
+        # only load priv on native windows
+        if session.platform == 'windows' && [ARCH_X86, ARCH_X64].include?(session.arch)
           session.load_priv rescue nil
         end
       end
 
-      if session.platform =~ /android/i
-        if datastore['AutoLoadAndroid']
-          session.load_android
-        end
+      if session.platform == 'android'
+        session.load_android
       end
 
       [ 'InitialAutoRunScript', 'AutoRunScript' ].each do |key|
-        if !datastore[key].empty?
+        unless datastore[key].empty?
           args = Shellwords.shellwords( datastore[key] )
           print_status("Session ID #{session.sid} (#{session.tunnel_to_s}) processing #{key} '#{datastore[key]}'")
           session.execute_script(args.shift, *args)
